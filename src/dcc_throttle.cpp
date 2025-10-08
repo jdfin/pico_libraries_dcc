@@ -1,88 +1,107 @@
+#include "dcc_throttle.h"
+#include "dcc_pkt.h"
+#include "xassert.h"
 #include <cstdint>
 #include <cstdio>
-#include "xassert.h"
-#include "dcc_pkt.h"
-#include "dcc_throttle.h"
 
-
-DccThrottle::DccThrottle() :
-    _pkt_speed(),
-    _pkt_func_0(),
-    _pkt_func_5(),
-    _pkt_func_9(),
-    _pkt_func_13(),
-    _pkt_func_21(),
-    _seq(0),
-    _pkt_write_cv(),
-    _write_cv_cnt(0),
-    _pkt_write_bit(),
-    _write_bit_cnt(0)
+DccThrottle::DccThrottle()
+    : _pkt_speed()
+    , _pkt_func_0()
+    , _pkt_func_5()
+    , _pkt_func_9()
+    , _pkt_func_13()
+    , _pkt_func_21()
+    , _seq(0)
+    , _pkt_write_cv()
+    , _write_cv_cnt(0)
+    , _pkt_write_bit()
+    , _write_bit_cnt(0)
 {
 }
-
 
 DccThrottle::~DccThrottle()
 {
 }
 
-
-void DccThrottle::address(int address)
+int DccThrottle::get_address() const
 {
-    _pkt_speed.address(address);
-    _pkt_func_0.address(address);
-    _pkt_func_5.address(address);
-    _pkt_func_9.address(address);
-    _pkt_func_13.address(address);
-    _pkt_func_21.address(address);
-    _seq = 0;
-    _pkt_write_cv.address(address);
-    _pkt_write_bit.address(address);
+    return _pkt_speed.get_address();
 }
 
-
-void DccThrottle::speed(int speed)
+void DccThrottle::set_address(int address)
 {
-    _pkt_speed.speed(speed);
+    _pkt_speed.set_address(address);
+    _pkt_func_0.set_address(address);
+    _pkt_func_5.set_address(address);
+    _pkt_func_9.set_address(address);
+    _pkt_func_13.set_address(address);
+    _pkt_func_21.set_address(address);
+    _seq = 0;
+    _pkt_write_cv.set_address(address);
+    _pkt_write_bit.set_address(address);
+}
+
+int DccThrottle::get_speed() const
+{
+    return _pkt_speed.get_speed();
+}
+
+void DccThrottle::set_speed(int speed)
+{
+    _pkt_speed.set_speed(speed);
     _seq &= ~1; // back up one if a function packet is next
 }
 
-
-void DccThrottle::function(int num, bool on)
+bool DccThrottle::get_function(int num) const
 {
     xassert(DccPkt::function_min <= num && num <= DccPkt::function_max);
 
     if (num <= 4) {
-        _pkt_func_0.f(num, on);
+        return _pkt_func_0.get_f(num);
+    } else if (num <= 8) {
+        return _pkt_func_5.get_f(num);
+    } else if (num <= 12) {
+        return _pkt_func_9.get_f(num);
+    } else if (num <= 20) {
+        return _pkt_func_13.get_f(num);
+    } else { // num <= 28
+        return _pkt_func_21.get_f(num);
+    }
+}
+
+void DccThrottle::set_function(int num, bool on)
+{
+    xassert(DccPkt::function_min <= num && num <= DccPkt::function_max);
+
+    if (num <= 4) {
+        _pkt_func_0.set_f(num, on);
         _seq = 1;
     } else if (num <= 8) {
-        _pkt_func_5.f(num, on);
+        _pkt_func_5.set_f(num, on);
         _seq = 3;
     } else if (num <= 12) {
-        _pkt_func_9.f(num, on);
+        _pkt_func_9.set_f(num, on);
         _seq = 5;
     } else if (num <= 20) {
-        _pkt_func_13.f(num, on);
+        _pkt_func_13.set_f(num, on);
         _seq = 7;
     } else { // num <= 28
-        _pkt_func_21.f(num, on);
+        _pkt_func_21.set_f(num, on);
         _seq = 9;
     }
 }
 
-
 void DccThrottle::write_cv(int cv_num, uint8_t cv_val)
 {
-    _pkt_write_cv.cv(cv_num, cv_val);
+    _pkt_write_cv.set_cv(cv_num, cv_val);
     _write_cv_cnt = write_cv_send_cnt;
 }
 
-
 void DccThrottle::write_bit(int cv_num, int bit_num, int bit_val)
 {
-    _pkt_write_bit.cv_bit(cv_num, bit_num, bit_val);
+    _pkt_write_bit.set_cv_bit(cv_num, bit_num, bit_val);
     _write_bit_cnt = write_bit_send_cnt;
 }
-
 
 // 0. Speed     1. F0-F4
 // 2. Speed     3. F5-F8
@@ -121,7 +140,6 @@ DccPkt DccThrottle::next_packet()
     else
         return _pkt_func_21;
 }
-
 
 void DccThrottle::show()
 {
