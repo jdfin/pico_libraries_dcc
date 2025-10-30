@@ -159,7 +159,7 @@ void DccRailCom::channelize()
     ch1_reset();
     if (_pkt_len >= 2 && _dec[0] < 0x40 && _dec[1] < 0x40) {
         uint id = (_dec[0] >> 2) & 0x0f;
-        if (id == id_adr_hi || id == id_adr_lo) {
+        if (id == id_ahi || id == id_alo) {
             _ch1_id = id;
             _ch1_data = ((_dec[0] << 6) | _dec[1]) & 0xff;
             _ch1_valid = true;
@@ -231,47 +231,54 @@ char* DccRailCom::show(char* buf, int buf_len) const
 
     // show channel 1
     if (_ch1_valid) {
-        b += snprintf(b, e - b, "%u: %02x | ", _ch1_id, _ch1_data);
+        if (_ch1_id == id_ahi) {
+            b += snprintf(b, e - b, "AHI");
+        } else if (_ch1_id == id_alo) {
+            b += snprintf(b, e - b, "ALO");
+        } else {
+            b += snprintf(b, e - b, "0x%x", _ch1_id);
+        }
+        b += snprintf(b, e - b, "=0x%02x | ", _ch1_data);
     } else {
-        b += snprintf(b, e - b, "/ch1/ | ");
+        b += snprintf(b, e - b, "/ch1/    | ");
     }
 
     // show channel 2
     if (_ch2_valid) {
         if (_ch2[0] >= 0x40) {
             if (_ch2[0] == ack) {
-                b += snprintf(b, e - b, "ack ");
+                b += snprintf(b, e - b, "ACK ");
             } else if (_ch2[0] == nack) {
-                b += snprintf(b, e - b, "nak ");
+                b += snprintf(b, e - b, "NAK ");
             } else if (_ch2[0] == busy) {
-                b += snprintf(b, e - b, "bsy ");
+                b += snprintf(b, e - b, "BSY ");
             } else {
                 b += snprintf(b, e - b, "%02x ", uint(_ch2[0]));
             }
         } else {
             // first 4 bits are always ID
             uint id = (_ch2[0] >> 2) & 0x0f;
-            if (id == 0) {
+            if (id == id_pom) {
                 // POM
                 uint cv_val = ((_ch2[0] << 6) | _ch2[1]) & 0xff;
                 // Information is in _ch2[0..1]; _ch2[2..5] is unused.
                 // It is possible to write two CVs at once and get two of these in one response, but we're not there yet.
                 // Print ID and value.
-                b += snprintf(b, e - b, "%u: %02x ", id, cv_val);
-            } else if (id == 7) {
+                b += snprintf(b, e - b, "POM %02x ", cv_val);
+            } else if (id == id_dyn) {
                 // DYN
                 // After ID comes 8 bits of data, then 6 bits of index, then maybe another ID/data/index.
                 // IDID DATADATA INDEXX IDID DATADATA INDEXX
                 // [  0  ][  1 ] [  2 ] [  3  ][  4 ] [  5 ]
                 uint val = ((_ch2[0] << 6) | _ch2[1]) & 0xff;
                 uint idx = _ch2[2];
-                b += snprintf(b, e - b, "%u: D=%u X=%u ", id, val, idx);
+                b += snprintf(b, e - b, "DYN %s=%u ", dyn_name(idx), val);
                 // another one?
                 id = (_ch2[3] >> 2) & 0x0f;
-                if (id == 7) {
+                if (id == id_dyn) {
                     val = ((_ch2[3] << 6) | _ch2[4]) & 0xff;
                     idx = _ch2[5];
-                    b += snprintf(b, e - b, "%u: D=%u X=%u ", id, val, idx);
+                    b += snprintf(b, e - b, "DYN %s=%u ", dyn_name(idx), val);
                 }
             } else {
                 // unexpected ID
@@ -297,3 +304,22 @@ char* DccRailCom::show(char* buf, int buf_len) const
     return buf;
 
 } // DccRailCom::show()
+
+const char *DccRailCom::dyn_name(uint x)
+{
+    static constexpr uint x_max = 64;
+    static constexpr uint name_max = 8;
+    static char id_names[x_max][name_max] = {
+        "SPD1", "SPD2", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6", "ID_7",
+        "ID_8", "ID_9", "ID10", "ID11", "ID12", "ID13", "ID14", "ID15",
+        "ID16", "ID17", "ID18", "ID19", "ID20", "ID21", "ID22", "ID23",
+        "ID24", "ID25", "ID26", "ID27", "ID28", "ID29", "ID30", "ID31",
+        "ID32", "ID33", "ID34", "ID35", "ID36", "ID37", "ID38", "ID39",
+        "ID40", "ID41", "ID42", "ID43", "ID44", "ID45", "ID46", "ID47",
+        "ID48", "ID49", "ID50", "ID51", "ID52", "ID53", "ID54", "ID55",
+        "ID56", "ID57", "ID58", "ID59", "ID60", "ID61", "ID62", "ID63",
+    };
+
+    xassert(x < x_max);
+    return id_names[x];
+}

@@ -58,7 +58,7 @@ DccBitstream::DccBitstream(int sig_gpio, int pwr_gpio, uart_inst_t* uart, int rc
     _pkt_reset(),
     _pkt_a(),
     _pkt_b(),
-    _current(&_pkt_idle),
+    _current(nullptr),
     _next(&_pkt_idle),
     _preamble_bits(DccPkt::ops_preamble_bits),
     _slice(pwm_gpio_to_slice_num(sig_gpio)),
@@ -124,8 +124,11 @@ void DccBitstream::start(int preamble_bits, DccPkt& first)
 
     _preamble_bits = preamble_bits;
 
-    _current = &first;
-    _next = &_pkt_idle;
+    //          start_ops()      or     start_svc()
+    xassert(&first == &_pkt_idle || &first == &_pkt_reset);
+
+    _current = nullptr;
+    _next = &first;
 
     // first packet starts with preamble (no cutout)
     _byte = -1;
@@ -136,9 +139,9 @@ void DccBitstream::start(int preamble_bits, DccPkt& first)
 
     pwm_set_enabled(_slice, true);
 
-    // The first bit has started going out. Program for second bit when first
-    // bit finishes. This takes advantage of the RP2040's double-buffering of
-    // TOP and LEVEL.
+    // The first bit of the preamble has started going out.
+    // Program for second bit when first bit finishes.
+    // This assumes the RP2040's double-buffering of TOP and LEVEL.
     next_bit();
 }
 
@@ -177,7 +180,8 @@ void DccBitstream::send_packet(const DccPkt& pkt)
 // called from start(), then the PWM IRQ handler
 void DccBitstream::next_bit()
 {
-    // byte=-2 is the cutout, byte=-1 is the preamble,
+    // byte=-2 is the cutout,
+    // byte=-1 is the preamble,
     // then byte=0,1,...msg_len-1 for the message bytes
     if (_byte == -2) {
         // doing railcom cutout
@@ -214,10 +218,14 @@ void DccBitstream::next_bit()
             prog_bit(1);
             _bit--;
 #if LOG_RAILCOM
-            _railcom.channelize();
-            _railcom.show(_log[_log_put], log_line_len);
-            if (++_log_put >= log_line_cnt)
-                _log_put = 0;
+            // On the first call from start(), _current is nullptr.
+            // Thereafter, _current is always set from _next, so is never nullptr.
+            if (_current != nullptr) {
+                _railcom.channelize();
+                _railcom.show(_log[_log_put], log_line_len);
+                if (++_log_put >= log_line_cnt)
+                    _log_put = 0;
+            }
 #endif
         } else {
             // continue preamble
@@ -225,7 +233,13 @@ void DccBitstream::next_bit()
             _bit--;
         }
     } else {
+        // sending message bytes
         xassert(_byte >= 0);
+        if (_byte == 0 && _bit == (8 - 1)) {
+            // time for the first bit of the first byte
+            _current = _next;
+            _next = &_pkt_idle;
+        }
         int msg_len = _current->msg_len();
         // _bit = 7...0, then -1 means stop bit
         if (_bit == -1) {
@@ -239,9 +253,6 @@ void DccBitstream::next_bit()
                 if (++_log_put >= log_line_cnt)
                     _log_put = 0;
 #endif
-                // next message
-                _current = _next;
-                _next = &_pkt_idle;
 #if 1 // railcom
                 // cutout first, then preamble
                 _byte = -2;

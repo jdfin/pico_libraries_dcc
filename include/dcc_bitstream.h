@@ -52,13 +52,12 @@ private:
     DccPkt _pkt_b;
 
     // ISR sends packet at _current. When it is done:
-    //   _current = _next   // _pkt_a, _pkt_b, _pkt_idle, _pkt_reset
+    //   _current = _next (one of _pkt_a, _pkt_b, _pkt_idle, _pkt_reset)
     //   _next = _pkt_idle
     //   start packet at _current with _preamble_bits
 
-    DccPkt* _first;    // first _current to go
-    DccPkt* _current;  // never nullptr
-    DccPkt* _next;     // _pkt_idle if nothing to send
+    DccPkt* _current;
+    DccPkt* _next;     // never nullptr; &_pkt_idle if nothing to send
 
     int _preamble_bits;
 

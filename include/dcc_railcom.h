@@ -76,6 +76,8 @@ private:
         _ch2_valid = false;
     }
 
+    static const char *dyn_name(uint x);
+
     // Lookup table: maps 4/8 code (as index) to decoded value
     // Usage: uint8_t value = decode[uint8_t four_eight_code];
     // invalid codes return 0xff.
@@ -89,7 +91,7 @@ private:
     // RailCom packet IDs (4 bits).
     // These are just the ones seen from LokSound 5.
     static constexpr uint id_pom = 0;
-    static constexpr uint id_adr_hi = 1;
-    static constexpr uint id_adr_lo = 2;
+    static constexpr uint id_ahi = 1;
+    static constexpr uint id_alo = 2;
     static constexpr uint id_dyn = 7;
 };

@@ -568,12 +568,11 @@ char *DccPkt::show(char *buf, int buf_len) const
         dump(b, e - b);
 
     } else if (b0 == 255) {
+#if PRINT_BRIEF
+        b += snprintf(b, e - b, "idle");
+#else
         b += snprintf(b, e - b, "       idle");
-
-        // if (_msg_len != 3) {
-        //     b += snprintf(b, e - b, ": ");
-        //     dump(b, e - b);
-        // }
+#endif
 
     } else {
         // "reserved" (232-252) or "advanced extended" (253-254)
