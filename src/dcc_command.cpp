@@ -13,10 +13,11 @@
 #include "xassert.h"
 
 static uart_inst_t *rc_uart = uart0;
-static int rc_gpio = 17;
+static int rc_gpio = 17; // uart0 rx
+static int dbg_gpio = 21;
 
 DccCommand::DccCommand(int sig_gpio, int pwr_gpio, int slp_gpio, DccAdc &adc) :
-    _bitstream(sig_gpio, pwr_gpio, rc_uart, rc_gpio),
+    _bitstream(sig_gpio, pwr_gpio, rc_uart, rc_gpio, dbg_gpio),
     _adc(adc),
     _mode(MODE_OFF),
     _next_throttle(_throttles.begin()),
@@ -166,56 +167,7 @@ void DccCommand::loop()
     }
     const char *p = BufLog::read_line_get();
     if (p != nullptr) {
-        // DCC messages start with "D ", RailCom messages start with "R ", and
-        // throttle messages with "T "; they should go in that order. Print
-        // the DCC message and keep track of how many columns were printed,
-        // tab over for the RailCom message, then do the same for the throttle
-        // message.
-        constexpr int dcc_cols = 12;
-        constexpr int rc_cols = 30;
-
-        static bool new_line = false;
-        static int dcc_last = 0;
-        static int rc_last = 0;
-
-        if (p[0] == 'D' && p[1] == ' ') {
-            // DCC message
-            dcc_last = printf("%s", p + 2); // p+2 to skip "D "
-            new_line = false;
-        } else if (p[0] == 'R' && p[1] == ' ') {
-            // RailCom message - tab over, then print
-            for (int i = dcc_last; i < dcc_cols; i++) {
-                printf(" ");
-            }
-            dcc_last = 0;
-            rc_last = printf("%s", p + 2); // p+2 to skip "R "
-            new_line = false;
-        } else if (p[0] == 'T' && p[1] == ' ') {
-            // Throttle message - tab over, then print
-            if (rc_last > 0) {
-                for (int i = rc_last; i < rc_cols; i++) {
-                    printf(" ");
-                }
-                rc_last = 0;
-            } else if (dcc_last > 0) {
-                for (int i = dcc_last; i < dcc_cols; i++) {
-                    printf(" ");
-                }
-                dcc_last = 0;
-            }
-            printf("%s\n", p + 2); // p+2 to skip "T "
-            new_line = true;
-        } else {
-            // Unknown - just print it, always on a new line
-            if (!new_line) {
-                printf("\n");
-                new_line = true;
-            }
-            printf("{%s}\n", p);
-            dcc_last = 0;
-            rc_last = 0;
-            new_line = true;
-        }
+        printf("%s\n", p);
         BufLog::read_line_put();
     }
 }

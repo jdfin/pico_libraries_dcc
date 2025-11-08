@@ -87,6 +87,9 @@ private:
 
     int _seq; // _seq = 0 ... seq_max-1
 
+    // last packet returned by next_packet
+    DccPkt *_pkt_last;
+
     DccPktOpsReadCv _pkt_read_cv;
     static const int read_cv_send_cnt = 5; // how many times to send it
     int _read_cv_cnt;                      // times left to send it (5, 4, ... 1, 0)

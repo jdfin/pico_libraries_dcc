@@ -36,6 +36,10 @@ RailCom::RailCom(uart_inst_t *uart, int rx_gpio, int dbg_gpio) :
 
 void RailCom::read()
 {
+#if 0
+    DbgGpio d(_dbg_gpio); // scope trigger
+#endif
+
     _pkt_len = 0;
     _ch1_msg_cnt = 0;
     _ch2_msg_cnt = 0;
@@ -44,18 +48,23 @@ void RailCom::read()
     for (_pkt_len = 0; _pkt_len < pkt_max && uart_is_readable(_uart); _pkt_len++) {
         _enc[_pkt_len] = uart_getc(_uart);
         _dec[_pkt_len] = RailComSpec::decode[_enc[_pkt_len]];
+#if 0
         // trigger on invalid data received
-        if (_dbg_gpio >= 0 && _dec[_pkt_len] == RailComSpec::DecId::dec_inv) {
+        if (_dec[_pkt_len] == RailComSpec::DecId::dec_inv) {
             DbgGpio d(_dbg_gpio); // scope trigger
             // XXX this seems to be needed to force construction of DbgGpio
             [[maybe_unused]] volatile int i = 0;
         }
-    }
+#endif
+    } // for (_pkt_len...)
+
+#if 0
     // trigger on not receiving all bytes
-    if (_dbg_gpio >= 0 && _pkt_len != pkt_max) {
+    if (_pkt_len != pkt_max) {
         DbgGpio d(_dbg_gpio);
         [[maybe_unused]] volatile int i = 0;
     }
+#endif
 
 } // RailCom::read()
 
@@ -182,7 +191,7 @@ char *RailCom::dump(char *buf, int buf_len) const
 } // RailCom::dump()
 
 
-// return argument buf so it can e.g. be a printf argument
+// return argument buf so it can (e.g.) be a printf argument
 char *RailCom::show(char *buf, int buf_len) const
 {
     memset(buf, '\0', buf_len);

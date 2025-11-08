@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "buf_log.h"
 #include "dcc_pkt.h"
@@ -33,6 +34,7 @@ DccThrottle::DccThrottle(int address) :
 #endif
 #endif
     _seq(0),
+    _pkt_last(nullptr),
     _pkt_read_cv(address),
     _read_cv_cnt(0),
     _pkt_write_cv(address),
@@ -229,52 +231,65 @@ DccPkt DccThrottle::next_packet()
 
     if (_read_cv_cnt > 0) {
         _read_cv_cnt--;
+        _pkt_last = &_pkt_read_cv;
         return _pkt_read_cv;
     }
 
     if (_write_cv_cnt > 0) {
         _write_cv_cnt--;
+        _pkt_last = &_pkt_write_cv;
         return _pkt_write_cv;
     }
 
     if (_write_bit_cnt > 0) {
         _write_bit_cnt--;
+        _pkt_last = &_pkt_write_bit;
         return _pkt_write_bit;
     }
 
     int seq = _seq;
 
-    if (++_seq >= seq_max) {
+    if (++_seq >= seq_max)
         _seq = 0;
-    }
 
     if ((seq & 1) == 0) { // if _seq even
+        _pkt_last = &_pkt_speed;
         return _pkt_speed;
     } else if (seq == 1) {
+        _pkt_last = &_pkt_func_0;
         return _pkt_func_0;
     } else if (seq == 3) {
+        _pkt_last = &_pkt_func_5;
         return _pkt_func_5;
     } else if (seq == 5) {
+        _pkt_last = &_pkt_func_9;
         return _pkt_func_9;
     } else if (seq == 7) {
+        _pkt_last = &_pkt_func_13;
         return _pkt_func_13;
 #if INCLUDE_DCC_FUNC_21
     } else if (seq == 9) {
+        _pkt_last = &_pkt_func_21;
         return _pkt_func_21;
 #if INCLUDE_DCC_FUNC_29
     } else if (seq == 11) {
+        _pkt_last = &_pkt_func_29;
         return _pkt_func_29;
 #if INCLUDE_DCC_FUNC_37
     } else if (seq == 13) {
+        _pkt_last = &_pkt_func_37;
         return _pkt_func_37;
 #if INCLUDE_DCC_FUNC_45
     } else if (seq == 15) {
+        _pkt_last = &_pkt_func_45;
         return _pkt_func_45;
 #if INCLUDE_DCC_FUNC_53
     } else if (seq == 17) {
+        _pkt_last = &_pkt_func_53;
         return _pkt_func_53;
 #if INCLUDE_DCC_FUNC_61
     } else if (seq == 19) {
+        _pkt_last = &_pkt_func_61;
         return _pkt_func_61;
 #endif
 #endif
@@ -287,21 +302,68 @@ DccPkt DccThrottle::next_packet()
     }
 }
 
-// This is called (at interrupt level) if any railcom channel2 messages are received in the
-// cutout following a DCC message from this throttle.
+// This is called (at interrupt level) if any railcom channel2 messages are
+// received in the cutout following a DCC message from this throttle.
 void DccThrottle::railcom(const RailComMsg *msg, int msg_cnt)
 {
-    char *b = BufLog::write_line_get();
-    if (b != nullptr) {
+    constexpr bool verbosity = 9;
+
+    if constexpr (verbosity >= 9) {
+
+        char *b = BufLog::write_line_get();
+        if (b == nullptr)
+            return;
         char *e = b + BufLog::line_len;
-        memset(b, '\0', BufLog::line_len);
-        b += snprintf(b, e - b, "T throttle %p:", this);
+
+        // show DCC packet sent
+        b += snprintf(b, e - b, "{");
+        if (_pkt_last != nullptr) {
+            _pkt_last->show(b, e - b);
+            b += strlen(b);
+        }
+        b += snprintf(b, e - b, "}");
+
+        // show railcom packet received
+        b += snprintf(b, e - b, " {");
+        if (msg_cnt == 0) {
+            b += snprintf(b, e - b, " no data");
+        } else {
+            for (int i = 0; i < msg_cnt; i++) {
+                b += snprintf(b, e - b, " ");
+                b += msg->show(b, e - b);
+                msg++;
+            }
+        }
+        b += snprintf(b, e - b, "}");
+
+        BufLog::write_line_put();
+
+    } else if constexpr (verbosity >= 1) {
+
+        char *b = nullptr; // get a log line only when needed
+        char *e = nullptr;
+
         for (int i = 0; i < msg_cnt; i++) {
-            b += snprintf(b, e - b, " ");
-            b += msg->show(b, e - b);
+            if (msg->id == RailComMsg::MsgId::pom) {
+                if (b == nullptr) {
+                    b = BufLog::write_line_get();
+                    if (b == nullptr)
+                        return;
+                    e = b + BufLog::line_len;
+                } else {
+                    // if there are two, put a space between them
+                    b += snprintf(b, e - b, " ");
+                }
+                b += msg->show(b, e - b);
+                _read_cv_cnt = 0;
+                _write_cv_cnt = 0;
+                _write_bit_cnt = 0;
+            }
             msg++;
         }
-        BufLog::write_line_put();
+
+        if (b != nullptr)
+            BufLog::write_line_put();
     }
 }
 

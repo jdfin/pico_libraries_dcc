@@ -111,7 +111,8 @@ bool RailComMsg::parse2(const uint8_t *&d, const uint8_t *d_end)
             if (len >= 3) {
                 uint8_t b1 = d[1];
                 uint8_t b2 = d[2];
-                if (b1 < RailComSpec::DecId::dec_max && b2 < RailComSpec::DecId::dec_max) {
+                if (b1 < RailComSpec::DecId::dec_max &&
+                    b2 < RailComSpec::DecId::dec_max) {
                     id = MsgId::ext;
                     ext.typ = ((b0 << 4) & 0x30) | ((b1 >> 2) & 0x0f);
                     ext.pos = ((b1 << 6) & 0xc0) | b2;
@@ -124,7 +125,8 @@ bool RailComMsg::parse2(const uint8_t *&d, const uint8_t *d_end)
             if (len >= 3) {
                 uint8_t b1 = d[1];
                 uint8_t b2 = d[2];
-                if (b1 < RailComSpec::DecId::dec_max && b2 < RailComSpec::DecId::dec_max) {
+                if (b1 < RailComSpec::DecId::dec_max &&
+                    b2 < RailComSpec::DecId::dec_max) {
                     id = MsgId::dyn;
                     dyn.val = ((b0 << 6) | b1) & 0xff;
                     dyn.id = RailComSpec::DynId(b2);
@@ -141,8 +143,10 @@ bool RailComMsg::parse2(const uint8_t *&d, const uint8_t *d_end)
                 uint8_t b3 = d[3];
                 uint8_t b4 = d[4];
                 uint8_t b5 = d[5];
-                if (b1 < RailComSpec::DecId::dec_max && b2 < RailComSpec::DecId::dec_max &&
-                    b3 < RailComSpec::DecId::dec_max && b4 < RailComSpec::DecId::dec_max &&
+                if (b1 < RailComSpec::DecId::dec_max &&
+                    b2 < RailComSpec::DecId::dec_max &&
+                    b3 < RailComSpec::DecId::dec_max &&
+                    b4 < RailComSpec::DecId::dec_max &&
                     b5 < RailComSpec::DecId::dec_max) {
                     // [ d0 ] [ d1 ] [ d2 ] [ d3 ] [ d4 ] [ d5 ]
                     // IIII00 000000 111111 112222 222233 333333
@@ -192,10 +196,11 @@ int RailComMsg::show(char *buf, int buf_len) const
     } else if (id == MsgId::ext) {
         b += snprintf(b, e - b, " %02x %02x", ext.typ, ext.pos);
     } else if (id == MsgId::dyn) {
-        b += snprintf(b, e - b, " %s=%d", RailComSpec::dyn_name(dyn.id), dyn.val);
+        b += snprintf(b, e - b, " %s=%d", RailComSpec::dyn_name(dyn.id),
+                      dyn.val);
     } else if (id == MsgId::xpom) {
-        b += snprintf(b, e - b, " %d %02x %02x %02x %02x", xpom.ss, xpom.val[0], xpom.val[1],
-                      xpom.val[2], xpom.val[3]);
+        b += snprintf(b, e - b, " %d %02x %02x %02x %02x", xpom.ss, xpom.val[0],
+                      xpom.val[1], xpom.val[2], xpom.val[3]);
     } else {
         b += snprintf(b, e - b, " ?");
     }
@@ -210,8 +215,9 @@ const char *RailComMsg::id_name() const
 {
     static constexpr int id_max = int(MsgId::inv) + 1;
     static constexpr int name_max = 4;
-    static char names[id_max][name_max] = {//  ack  nak  bsy  pom  ahi  alo  ext  dyn xpom  inv
-                                           "A", "N", "B", "P", "H", "L", "E", "D", "X", "I"};
+    static char names[id_max][name_max] = {
+        // ack nak bsy pom  ahi  alo  ext  dyn xpom  inv
+        "A", "N", "B", "C", "H", "L", "E", "D", "X", "I"};
     xassert(int(id) < id_max);
     return names[int(id)];
 }
@@ -247,7 +253,8 @@ bool RailComMsg::operator==(const RailComMsg &rhs) const
 
         case MsgId::xpom:
             return xpom.ss == rhs.xpom.ss && xpom.val[0] == rhs.xpom.val[0] &&
-                   xpom.val[1] == rhs.xpom.val[1] && xpom.val[2] == rhs.xpom.val[2] &&
+                   xpom.val[1] == rhs.xpom.val[1] &&
+                   xpom.val[2] == rhs.xpom.val[2] &&
                    xpom.val[3] == rhs.xpom.val[3];
 
         default:

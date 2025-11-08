@@ -15,7 +15,7 @@ class DccBitstream
 public:
 
     DccBitstream(int sig_gpio, int pwr_gpio, uart_inst_t *uart = nullptr,
-                 int rc_gpio = -1);
+                 int rc_gpio = -1, int dbg_gpio = -1);
     ~DccBitstream();
 
     void start_ops();
@@ -39,6 +39,8 @@ private:
     RailCom _railcom;
 
     int _pwr_gpio;
+
+    int _dbg_gpio;
 
     DccPktIdle _pkt_idle;
     DccPktReset _pkt_reset;

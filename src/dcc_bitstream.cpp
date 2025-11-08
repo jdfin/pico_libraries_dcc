@@ -55,9 +55,10 @@
 
 
 DccBitstream::DccBitstream(int sig_gpio, int pwr_gpio, uart_inst_t *uart,
-                           int rc_gpio) :
-    _railcom(uart, rc_gpio),
+                           int rc_gpio, int dbg_gpio) :
+    _railcom(uart, rc_gpio, dbg_gpio),
     _pwr_gpio(pwr_gpio),
+    _dbg_gpio(dbg_gpio),
     _pkt_idle(),
     _pkt_reset(),
     _pkt2_idle(_pkt_idle),
@@ -72,7 +73,9 @@ DccBitstream::DccBitstream(int sig_gpio, int pwr_gpio, uart_inst_t *uart,
     _byte(INT_MAX), // set in start_*()
     _bit(INT_MAX)   // set in start_*()
 {
-    // DbgGpio::init({0});
+#if 1
+    DbgGpio::init(_dbg_gpio);
+#endif
 
     // Do not do PWM setup here since this might be a static object, and
     // other stuff is not fully initialized. In particular, clock_get_hz()
@@ -140,15 +143,15 @@ void DccBitstream::start(int preamble_bits, DccPkt &first)
     _next2 = &_pkt2_a;
 
     // first packet starts with preamble (no cutout)
-    _byte = -1;
-    // will send a preamble bit for _bit = _preamble_bits-1...0
-    _bit = _preamble_bits - 1;
+    // (-2, 0) means end of cutout, so next_bit() starts preamble on next call
+    _byte = -2;
+    _bit = 0;
 
     next_bit();
 
     pwm_set_enabled(_slice, true);
 
-    // The first bit of the preamble has started going out.
+    // The first bit of the preamble has just started going out.
     // Program for second bit when first bit finishes.
     // This assumes the RP2040's double-buffering of TOP and LEVEL.
     next_bit();
@@ -195,12 +198,20 @@ void DccBitstream::send_packet(const DccPkt &pkt, DccThrottle *throttle)
 } // void DccBitstream::send_packet(const DccPkt &pkt, DccThrottle *throttle)
 
 
-// called from start(), then the PWM IRQ handler
+// Called from start(), then the PWM IRQ handler in response to the end of
+// each bit. When this is called, a new bit has already started. Programming
+// in here affects the next bit, the one that will start at the next
+// interrupt.
+//
+// byte=-2 is the railcom cutout
+// byte=-1 is the packet preamble
+// then byte=0,1...msg_len-1 for the message bytes
+//
 void DccBitstream::next_bit()
 {
-    // byte=-2 is the railcom cutout,
-    // byte=-1 is the packet preamble,
-    // then byte=0,1...msg_len-1 for the message bytes
+#if 0
+    DbgGpio g(_dbg_gpio);
+#endif
     if (_byte == -2) {
         // doing railcom cutout
         if (_bit == 4) {
@@ -214,62 +225,65 @@ void DccBitstream::next_bit()
             prog_bit(1, 0);
             _bit--;
         } else {
-            // end of cutout, start preamble
             xassert(_bit == 0);
-            prog_bit(1, 4);
+            // end of cutout, start preamble
+            prog_bit(1); // first bit in preamble
             _byte = -1;
-            _bit = _preamble_bits - 1; // just did the first preamble bit
+            _bit = _preamble_bits - 1;
+            // Note: All the prog_bit(1) calls (after the first) when sending
+            // the preamble are not needed since the PWM will send ones and
+            // interrupt until we change it. But prog_bit(1) only takes about
+            // 1 usec, so just leave it there.
         }
     } else if (_byte == -1) {
         // sending preamble
         if (_bit == (_preamble_bits - 1)) {
-            // First bit of preamble. The cutout just ended and we've started
-            // the first preamble bit. The first preamble bit was programmed
-            // on the previous interrupt.
-            _railcom.read();
-            // and continue preamble
+            // First bit of preamble has just started. Call prog_bit first in
+            // case we end up taking longer than a bit time (116 us). The
+            // "missed" interrupt will still get handled, albeit late, but the
+            // double-buffering in the PWM registers makes it work as long as
+            // we don't take more than (about) two bit times (232 us) here.
             prog_bit(1);
             _bit--;
-#if LOG_RAILCOM
+            // The cutout just ended and we've started the first preamble bit.
+            _railcom.read();
             // On the first call from start(), _current2 is nullptr.
-            // Thereafter, _current2 is always set from _next2, so is never
-            // nullptr. At this point, it still points to the packet just
-            // before the cutout (it changes to the next packet at the end of
-            // the preamble).
+            // Thereafter, _current2 is always set from _next2 (which is
+            // always _pkt2_idle, _pkt2_a, or _pkt2_b), so is never nullptr.
+            // At this point, it still points to the packet just before the
+            // cutout (it changes to the next packet at the end of the
+            // preamble).
+#if 0
+            // show DCC packet just sent
             if (_current2 != nullptr) {
-                char *b;
-
-                b = BufLog::write_line_get();
-                if (b != nullptr) {
-                    _current2->show(b, BufLog::line_len);
+                char *b1 = BufLog::write_line_get();
+                if (b1 != nullptr) {
+                    _current2->show(b1, BufLog::line_len);
                     BufLog::write_line_put();
-                }
-
-                _railcom.parse();
-
-#if 0
-                b = BufLog::write_line_get();
-                if (b != nullptr) {
-                    _railcom.show(b, BufLog::line_len);
-                    BufLog::write_line_put();
-                }
-#endif
-                DccThrottle *throttle = _current2->get_throttle();
-#if 0
-                b = BufLog::write_line_get();
-                if (b != nullptr) {
-                    memset(b, '\0', BufLog::line_len);
-                    b += snprintf(b, BufLog::line_len, "T throttle %p",
-                                  throttle);
-                    BufLog::write_line_put();
-                }
-#endif
-                if (throttle != nullptr) {
-                    const RailComMsg *msg;
-                    int msg_cnt = _railcom.get_ch2_msgs(msg);
-                    throttle->railcom(msg, msg_cnt);
                 }
             }
+#endif
+            _railcom.parse();
+#if 0
+            // show railcom packet just received
+            char *b2 = BufLog::write_line_get();
+            if (b2 != nullptr) {
+                _railcom.show(b2, BufLog::line_len);
+                BufLog::write_line_put();
+            }
+#endif
+            DccThrottle *throttle =
+                ((_current2 != nullptr) ? _current2->get_throttle() : nullptr);
+            if (throttle != nullptr) {
+                const RailComMsg *msg;
+                int msg_cnt = _railcom.get_ch2_msgs(msg);
+                throttle->railcom(msg, msg_cnt);
+            }
+#if 0
+            // Demonstrate taking more than a bit time in this processing,
+            // showing that the next interrupt happens immediately on return
+            // and things work okay.
+            busy_wait_us_32(150); // > DccSpec::t1_nom_us * 2 (116 usec)
 #endif
         } else if (_bit > 0) {
             // continue preamble
@@ -277,6 +291,7 @@ void DccBitstream::next_bit()
             _bit--;
         } else {
             // end of preamble, send packet start bit
+            xassert(_bit == 0);
             prog_bit(0);
             _byte = 0;
             _bit = 7;
@@ -329,8 +344,6 @@ void DccBitstream::next_bit()
 // interrupt handler
 void DccBitstream::pwm_handler(void *arg)
 {
-    // DbgGpio g(0);
-
     DccBitstream *me = (DccBitstream *)arg;
 
     me->next_bit();
