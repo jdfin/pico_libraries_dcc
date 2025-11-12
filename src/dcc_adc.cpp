@@ -57,14 +57,19 @@ void DccAdc::stop()
 // that means this must be called at least every 400 usec. Calling it once per
 // DCC bit time should be fine (zeros are 200 usec). Sometimes one call will
 // get two samples, so make sure that works.
-void DccAdc::loop()
+// Return true if there was at least one sample, false if none.
+bool DccAdc::loop()
 {
-    if (_gpio < 0)
-        return;
-
     DbgGpio d(_dbg_loop_gpio);
 
+    if (_gpio < 0)
+        return false;
+
+    bool any = false;
+
     while (!adc_fifo_is_empty()) {
+
+        any = true;
 
         uint16_t adc_val = adc_fifo_get();
 
@@ -81,20 +86,22 @@ void DccAdc::loop()
         if (_avg_idx >= avg_max)
             _avg_idx = 0;
     }
+
+    return any;
 }
 
 
-uint16_t DccAdc::short_ma() const
+uint16_t DccAdc::short_avg_ma() const
 {
-    uint16_t raw = short_raw();
+    uint16_t raw = short_avg_raw();
     uint16_t mv = raw_to_mv(raw);
     return mv_to_ma(mv);
 }
 
 
-uint16_t DccAdc::long_ma() const
+uint16_t DccAdc::long_avg_ma() const
 {
-    uint16_t raw = long_raw();
+    uint16_t raw = long_avg_raw();
     uint16_t mv = raw_to_mv(raw);
     return mv_to_ma(mv);
 }

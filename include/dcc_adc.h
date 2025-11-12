@@ -13,10 +13,10 @@ public:
     void start();
     void stop();
 
-    void loop();
+    bool loop();
 
-    uint16_t short_ma() const;
-    uint16_t long_ma() const;
+    uint16_t short_avg_ma() const;
+    uint16_t long_avg_ma() const;
 
     bool logging() const
     {
@@ -39,12 +39,12 @@ private:
 
     uint16_t avg_raw(int cnt) const;
 
-    uint16_t short_raw() const
+    uint16_t short_avg_raw() const
     {
         return avg_raw(short_cnt);
     }
 
-    uint16_t long_raw() const
+    uint16_t long_avg_raw() const
     {
         return avg_raw(long_cnt);
     }

@@ -14,6 +14,10 @@
 #include "xassert.h"
 
 
+// gpio to assert while in the next_bit function
+int DccCommand::dbg_get_packet __attribute((weak)) = -1;
+
+
 DccCommand::DccCommand(int sig_gpio, int pwr_gpio, int slp_gpio, DccAdc &adc,
                        uart_inst_t *const rc_uart, int rc_gpio) :
     _bitstream(*this, sig_gpio, pwr_gpio, rc_uart, rc_gpio),
@@ -40,8 +44,12 @@ DccCommand::DccCommand(int sig_gpio, int pwr_gpio, int slp_gpio, DccAdc &adc,
         gpio_put(slp_gpio, 1);
         gpio_set_dir(slp_gpio, GPIO_OUT);
     }
+    ack_reset();
     _bitstream.show_dcc(true);
     _bitstream.show_railcom(true);
+    show_acks(true);
+    dbg_init();
+    dbg_times_reset();
 }
 
 
@@ -52,6 +60,12 @@ DccCommand::~DccCommand()
         delete t;
     }
     _next_throttle = _throttles.begin();
+}
+
+
+void DccCommand::dbg_init()
+{
+    DbgGpio::init(dbg_get_packet);
 }
 
 
@@ -144,13 +158,21 @@ bool DccCommand::svc_done(bool &result, uint8_t &val)
 
 void DccCommand::loop()
 {
-    if (_mode == Mode::SVC)
-        _adc.loop();
+    if (_mode != Mode::SVC)
+        return;
+
+    if (!_adc.loop())
+        return; // no new adc samples
+
+    ack_check(_adc.short_avg_ma());
 }
 
 
 void DccCommand::get_packet(DccPkt2 &pkt2)
 {
+    DbgGpio d(dbg_get_packet);
+    uint32_t start_us = time_us_32();
+
     if (_mode == Mode::OPS) {
         get_packet_ops(pkt2);
     } else if (_mode == Mode::SVC) {
@@ -163,6 +185,18 @@ void DccCommand::get_packet(DccPkt2 &pkt2)
             get_packet_svc_read_bit(pkt2);
         }
     }
+
+    uint32_t time_us = time_us_32() - start_us;
+    if (time_us < _get_packet_min_us)
+        _get_packet_min_us = time_us;
+    if (time_us > _get_packet_max_us)
+        _get_packet_max_us = time_us;
+    if (_get_packet_avg_us == 0)
+        _get_packet_avg_us = time_us * get_packet_avg_len;
+    else
+        _get_packet_avg_us =
+            (_get_packet_avg_us * (get_packet_avg_len - 1) + time_us) /
+            get_packet_avg_len;
 }
 
 
@@ -185,7 +219,7 @@ void DccCommand::get_packet_ops(DccPkt2 &pkt2)
 // 1. Send out DccSpec::svc_reset1_cnt (20) resets
 // 2. Send out DccSpec::svc_command_cnt (5) commands (write byte/bit)
 // 3. Send out DccSpec::svc_reset2_cnt (5) resets
-// If an ack is detected in step 2 or 3, immediately quit (power off).
+// If an ack is detected in step 2 or 3, immediately quit and power off track.
 void DccCommand::get_packet_svc_write(DccPkt2 &pkt2)
 {
     if (_reset1_cnt > 0) {
@@ -196,51 +230,59 @@ void DccCommand::get_packet_svc_write(DccPkt2 &pkt2)
         if (_reset1_cnt == 0) {
             // The long average adc reading is the baseline for
             // detecting an ack pulse.
-            _ack_ma = _adc.long_ma() + ack_inc_ma;
+            ack_arm(_adc.long_avg_ma() + ack_inc_ma);
             // done with resets, next send write commands
             _command_cnt = DccSpec::svc_command_cnt;
         }
-    } else {
-        xassert(_reset1_cnt == 0);
-        // Use the short average adc reading to detect an ack.
-        if (_adc.short_ma() >= _ack_ma) {
-            // Ack! Don't send any more packets, and power off.
-            if (!_adc.logging()) {
-                _command_cnt = 0;
-                _reset2_cnt = 0;
-            }
-            // We can't have _svc_status != IN_PROGRESS after returning from
-            // this function. Having this 'next' value covers adc logging.
-            _svc_status_next = SUCCESS;
-        }
-        if (_command_cnt > 0) {
-            xassert(_reset2_cnt == 0);
-            if (_mode_svc == ModeSvc::WRITE_CV) {
-                pkt2.set(_pkt_svc_write_cv);
-            } else {
-                xassert(_mode_svc == ModeSvc::WRITE_BIT);
-                pkt2.set(_pkt_svc_write_bit);
-            }
-            _command_cnt--;
-            if (_command_cnt == 0) {
-                // done with write commands, next send more resets
-                _reset2_cnt = DccSpec::svc_reset2_cnt;
-            }
-        } else if (_reset2_cnt > 0) {
-            xassert(_command_cnt == 0);
-            pkt2.set(_pkt_reset);
-            _reset2_cnt--;
-        } else {
-            xassert(_command_cnt == 0);
-            xassert(_reset2_cnt == 0);
-            if (_svc_status_next == IN_PROGRESS) {
-                _svc_status = ERROR; // failed, timeout
-            } else {
-                _svc_status = SUCCESS;
-            }
-            mode_off();
-        }
+        return;
     }
+
+    xassert(_reset1_cnt == 0);
+
+    // Sending the writes or final resets - check for ack
+    if (ack()) {
+        // Don't send any more packets, and power off.
+        if (!_adc.logging()) {
+            _command_cnt = 0;
+            _reset2_cnt = 0;
+        }
+        // We can't have _svc_status != IN_PROGRESS after returning from
+        // this function. Having this 'next' value covers adc logging.
+        _svc_status_next = SUCCESS;
+    }
+
+    if (_command_cnt > 0) {
+        xassert(_reset2_cnt == 0);
+        if (_mode_svc == ModeSvc::WRITE_CV) {
+            pkt2.set(_pkt_svc_write_cv);
+        } else {
+            xassert(_mode_svc == ModeSvc::WRITE_BIT);
+            pkt2.set(_pkt_svc_write_bit);
+        }
+        _command_cnt--;
+        if (_command_cnt == 0) {
+            // done with write commands, next send more resets
+            _reset2_cnt = DccSpec::svc_reset2_cnt;
+        }
+        return;
+    }
+
+    if (_reset2_cnt > 0) {
+        xassert(_command_cnt == 0);
+        pkt2.set(_pkt_reset);
+        _reset2_cnt--;
+        return;
+    }
+
+    xassert(_command_cnt == 0);
+    xassert(_reset2_cnt == 0);
+    if (_svc_status_next == IN_PROGRESS) {
+        _svc_status = ERROR; // failed, timeout
+    } else {
+        _svc_status = SUCCESS;
+    }
+    mode_off();
+
 } // void DccCommand::get_packet_svc_write(DccPkt2 &pkt2)
 
 
@@ -277,7 +319,7 @@ void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
         if (_reset1_cnt == 0) {
             // Done with resets. Use the long average adc reading as the
             // baseline for detecting an ack pulse.
-            _ack_ma = _adc.long_ma() + ack_inc_ma;
+            ack_arm(_adc.long_avg_ma() + ack_inc_ma);
             _verify_bit = 7;
             _verify_bit_val = 1;
             _command_cnt = DccSpec::svc_command_cnt;
@@ -288,11 +330,14 @@ void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
 
     xassert(_reset1_cnt == 0);
 
-    if (_adc.short_ma() >= _ack_ma) {
-        // Ack!
+    if (ack()) {
         if (_verify_bit < 8) {
             // This is an ack for a bit-verify
             _cv_val |= (1 << _verify_bit);
+            // It is probably okay to not send any more bit-verifies for the
+            // current bit and start the resets. It might even be possible to
+            // skip the resets and start the next bit verify. But for now we
+            // just keep going. It could save a few packets per 1-bit someday.
         } else {
             // This is the ack for the byte-verify at the end
             _svc_status_next = SUCCESS;
@@ -315,7 +360,10 @@ void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
         _command_cnt--;
         if (_command_cnt == 0)
             _reset2_cnt = DccSpec::svc_reset2_cnt;
-    } else if (_reset2_cnt > 0) {
+        return;
+    }
+
+    if (_reset2_cnt > 0) {
         xassert(_command_cnt == 0);
         pkt2.set(_pkt_reset);
         _reset2_cnt--;
@@ -324,37 +372,47 @@ void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
             // each time just before sending out the verify packets. The
             // current might not always hold steady through the whole
             // sequence.
-            _ack_ma = _adc.long_ma() + ack_inc_ma;
-            // printf("long_ma = %u, ack_ma = %u\n", long_ma, _ack_ma);
+            ack_arm(_adc.long_avg_ma() + ack_inc_ma);
         }
-    } else {
-        // done with DccSpec::svc_command_cnt verifies and DccSpec::svc_reset2_cnt resets for _verify_bit
-        xassert(_command_cnt == 0);
-        xassert(_reset2_cnt == 0);
-        if (_verify_bit == 8) {
-            // done with the byte verify at the end
-            if (_svc_status_next == IN_PROGRESS)
-                _svc_status = ERROR; // failed, timeout
-            else
-                _svc_status = SUCCESS;
-            mode_off();
-        } else if (_verify_bit > 0) {
-            // done with a single-bit verify
-            _verify_bit--;
-            xassert(_verify_bit >= 0 && _verify_bit <= 7);
-            xassert(_verify_bit_val == 1);
-            _pkt_svc_verify_bit.set_bit(_verify_bit, _verify_bit_val);
-            pkt2.set(_pkt_svc_verify_bit);
-            _command_cnt = DccSpec::svc_command_cnt - 1;
-        } else {
-            xassert(_verify_bit == 0);
-            // start byte verify
-            _verify_bit = 8; // signifies verify byte
-            _pkt_svc_verify_cv.set_cv_val(_cv_val);
-            pkt2.set(_pkt_svc_verify_cv);
-            _command_cnt = DccSpec::svc_command_cnt - 1;
-        }
+        return;
     }
+
+    // Done with DccSpec::svc_command_cnt verifies and DccSpec::svc_reset2_cnt
+    // resets for one of the 8 bit verifies, or the final byte verify.
+
+    xassert(_command_cnt == 0);
+    xassert(_reset2_cnt == 0);
+
+    if (_verify_bit >= 1 && _verify_bit <= 7) {
+        // done with one of the first 7 single-bit verifies;
+        // start the next bit verify
+        _verify_bit--;
+        xassert(_verify_bit >= 0 && _verify_bit <= 7);
+        xassert(_verify_bit_val == 1);
+        _pkt_svc_verify_bit.set_bit(_verify_bit, _verify_bit_val);
+        pkt2.set(_pkt_svc_verify_bit);
+        _command_cnt = DccSpec::svc_command_cnt - 1;
+        return;
+    }
+
+    if (_verify_bit == 0) {
+        // done with the last single-bit verify;
+        // start the final byte verify
+        _verify_bit = 8; // magic number signifies verify byte
+        _pkt_svc_verify_cv.set_cv_val(_cv_val);
+        pkt2.set(_pkt_svc_verify_cv);
+        _command_cnt = DccSpec::svc_command_cnt - 1;
+        return;
+    }
+
+    xassert(_verify_bit == 8);
+
+    // done with the byte verify at the end
+    if (_svc_status_next == IN_PROGRESS)
+        _svc_status = ERROR; // failed, timeout
+    else
+        _svc_status = SUCCESS;
+    mode_off();
 
 } // void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
 
@@ -369,8 +427,7 @@ void DccCommand::get_packet_svc_read_bit(DccPkt2 &pkt2)
         _reset1_cnt--;
         if (_reset1_cnt == 0) {
             // Done with resets (second-to-last one has just started)
-            _ack_ma = _adc.long_ma() + ack_inc_ma;
-            // printf("long_ma = %u, ack_ma = %u\n", long_ma, _ack_ma);
+            ack_arm(_adc.long_avg_ma() + ack_inc_ma);
             xassert(_verify_bit >= 0 && _verify_bit <= 7);
             _verify_bit_val = 0; // first 0, then 1 if no ack for 0
             _command_cnt = DccSpec::svc_command_cnt;
@@ -381,8 +438,8 @@ void DccCommand::get_packet_svc_read_bit(DccPkt2 &pkt2)
 
     xassert(_reset1_cnt == 0);
 
-    if (_adc.short_ma() >= _ack_ma) {
-        // Ack! Could be checking for 0 or for 1.
+    if (ack()) {
+        // Could be checking for 0 or for 1.
         _cv_val = _verify_bit_val;
         // Either way we're done
         _svc_status_next = SUCCESS;

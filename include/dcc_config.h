@@ -23,10 +23,13 @@ constexpr int dcc_adc_gpio = 26; // CS (ADC0)
 constexpr int railcom_gpio = 17;
 uart_inst_t * const railcom_uart = uart0;
 
+// position 14 is gpio 20
+// position 15 is gpio 21
 constexpr int railcom_dbg_read_gpio = -1;
 constexpr int railcom_dbg_junk_gpio = -1;
 constexpr int railcom_dbg_short_gpio = -1;
-constexpr int dcc_bitstream_dbg_next_gpio = -1;
+constexpr int dcc_bitstream_dbg_next_bit_gpio = 21;
+constexpr int dcc_command_dbg_get_packet_gpio = 20;
 
 #elif (defined PIMORONI_TINY2040)
 
