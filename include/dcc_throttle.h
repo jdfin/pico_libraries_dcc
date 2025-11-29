@@ -35,12 +35,12 @@ public:
     void railcom(const RailComMsg *msg, int msg_cnt);
 
     // reset packet sequence to start (typically for debug purposes)
-    void restart()
-    {
-        _seq = 0;
-    }
+    void restart() { _seq = 0; }
 
     void show();
+
+    void show_speed(bool show) { _show_speed = show; }
+    bool show_speed() const { return _show_speed; }
 
 private:
 
@@ -94,23 +94,25 @@ private:
 
     DccPktOpsReadCv _pkt_read_cv;
     static const int read_cv_send_cnt = 5; // how many times to send it
-    int _read_cv_cnt;                      // times left to send it (5, 4, ... 1, 0)
+    int _read_cv_cnt; // times left to send it (5, 4, ... 1, 0)
 
     // There is no ops "read bit" command
 
     DccPktOpsWriteCv _pkt_write_cv;
     static const int write_cv_send_cnt = 5; // how many times to send it
-    int _write_cv_cnt;                      // times left to send it (5, 4, ... 1, 0)
+    int _write_cv_cnt; // times left to send it (5, 4, ... 1, 0)
 
     DccPktOpsWriteBit _pkt_write_bit;
     static const int write_bit_send_cnt = 5; // how many times to send it
-    int _write_bit_cnt;                      // times left to send it (5, 4, ... 1, 0)
+    int _write_bit_cnt; // times left to send it (5, 4, ... 1, 0)
 
     bool _ops_cv_done;
+    bool _ops_cv_status;
     uint8_t _ops_cv_val;
 
     // speed reported in railcom data, if any
     uint8_t _speed;
     uint64_t _speed_us;
+    bool _show_speed;
 
 }; // class DccThrottle

@@ -5,12 +5,12 @@
 
 #include "dcc_bitstream.h"
 #include "dcc_pkt2.h"
+#include "dcc_throttle.h"
 #include "hardware/uart.h"
 
 #undef INCLUDE_ACK_DBG
 
 class DccAdc;
-class DccThrottle;
 
 class DccCommand
 {
@@ -40,15 +40,9 @@ public:
         SVC,
     };
 
-    Mode mode() const
-    {
-        return _mode;
-    }
+    Mode mode() const { return _mode; }
 
-    DccAdc &adc() const
-    {
-        return _adc;
-    }
+    DccAdc &adc() const { return _adc; }
 
     // called by DccBitstream to get a packet to send
     void get_packet(DccPkt2 &pkt);
@@ -68,18 +62,24 @@ public:
         _bitstream.show_dcc(show);
         _show_acks = show;
     }
-    bool show_dcc() const
+    bool show_dcc() const { return _bitstream.show_dcc(); }
+
+    void show_railcom(bool show) { _bitstream.show_railcom(show); }
+    bool show_railcom() const { return _bitstream.show_railcom(); }
+
+    void show_speed(bool show)
     {
-        return _bitstream.show_dcc();
+        for (DccThrottle *t : _throttles)
+            t->show_speed(show);
     }
 
-    void show_railcom(bool show)
+    bool show_speed()
     {
-        _bitstream.show_railcom(show);
-    }
-    bool show_railcom() const
-    {
-        return _bitstream.show_railcom();
+        // return true if any throttle has show_speed set
+        for (DccThrottle *t : _throttles)
+            if (t->show_speed())
+                return true;
+        return false;
     }
 
 private:
@@ -177,9 +177,9 @@ private:
 
     enum class SvcCmdStep {
         NONE,
-        RESET1,     // sending initial resets (typ 20)
-        COMMAND,    // sending write or verify commands (typ 5)
-        RESET2,     // sending final resets (typ 5)
+        RESET1,  // sending initial resets (typ 20)
+        COMMAND, // sending write or verify commands (typ 5)
+        RESET2,  // sending final resets (typ 5)
     };
     SvcCmdStep _svc_cmd_step;
     int _svc_cmd_cnt;

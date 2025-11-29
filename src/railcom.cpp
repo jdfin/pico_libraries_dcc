@@ -220,8 +220,12 @@ char *RailCom::show(char *buf, int buf_len) const
                 b += snprintf(b, e - b, " ");
         }
         // anything unparsable at the end?
-        if (!_parsed_all)
-            b += snprintf(b, e - b, " [+junk]");
+        if (!_parsed_all) {
+            b += snprintf(b, e - b, " ! ");
+            dump(b, e - b); // returns b
+            b += strlen(b); // XXX check for overflow
+            b += snprintf(b, e - b, " !");
+        }
     }
 
     return buf;

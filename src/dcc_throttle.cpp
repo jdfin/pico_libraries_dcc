@@ -11,42 +11,19 @@
 #include "xassert.h"
 
 DccThrottle::DccThrottle(int address) :
-    _pkt_speed(address),
-    _pkt_func_0(address),
-    _pkt_func_5(address),
-    _pkt_func_9(address),
-    _pkt_func_13(address),
-#if (DCC_FUNC_MAX >= 21)
-    _pkt_func_21(address),
-#endif
-#if (DCC_FUNC_MAX >= 29)
-    _pkt_func_29(address),
-#endif
-#if (DCC_FUNC_MAX >= 37)
-    _pkt_func_37(address),
-#endif
-#if (DCC_FUNC_MAX >= 45)
-    _pkt_func_45(address),
-#endif
-#if (DCC_FUNC_MAX >= 53)
-    _pkt_func_53(address),
-#endif
-#if (DCC_FUNC_MAX >= 61)
-    _pkt_func_61(address),
-#endif
     _seq(0),
     _pkt_last(nullptr),
-    _pkt_read_cv(address),
     _read_cv_cnt(0),
-    _pkt_write_cv(address),
     _write_cv_cnt(0),
-    _pkt_write_bit(address),
     _write_bit_cnt(0),
     _ops_cv_done(false),
+    _ops_cv_status(false),
     _ops_cv_val(0),
     _speed(0),
-    _speed_us(UINT64_MAX)
+    _speed_us(UINT64_MAX),
+    _show_speed(false)
 {
+    set_address(address);
 }
 
 DccThrottle::~DccThrottle()
@@ -83,9 +60,10 @@ void DccThrottle::set_address(int address)
 #if (DCC_FUNC_MAX >= 61)
     _pkt_func_61.set_address(address);
 #endif
-    _seq = 0;
+    _pkt_read_cv.set_address(address);
     _pkt_write_cv.set_address(address);
     _pkt_write_bit.set_address(address);
+    _seq = 0;
 }
 
 int DccThrottle::get_speed() const
@@ -198,13 +176,16 @@ void DccThrottle::read_cv(int cv_num)
 {
     _pkt_read_cv.set_cv(cv_num);
     _ops_cv_done = false;
-    _read_cv_cnt = read_cv_send_cnt;
+    _ops_cv_status = false;
+    // +1 because when it decrements to zero it's an error
+    _read_cv_cnt = read_cv_send_cnt + 1;
 }
 
 void DccThrottle::write_cv(int cv_num, uint8_t cv_val)
 {
     _pkt_write_cv.set_cv(cv_num, cv_val);
     _ops_cv_done = false;
+    _ops_cv_status = false;
     _write_cv_cnt = write_cv_send_cnt;
 }
 
@@ -212,6 +193,7 @@ void DccThrottle::write_bit(int cv_num, int bit_num, int bit_val)
 {
     _pkt_write_bit.set_cv_bit(cv_num, bit_num, bit_val);
     _ops_cv_done = false;
+    _ops_cv_status = false;
     _write_bit_cnt = write_bit_send_cnt;
 }
 
@@ -220,7 +202,7 @@ bool DccThrottle::ops_done(bool &result, uint8_t &value)
     if (!_ops_cv_done)
         return false;
 
-    result = true;
+    result = _ops_cv_status;
     value = _ops_cv_val;
 
     return true;
@@ -242,8 +224,16 @@ DccPkt DccThrottle::next_packet()
 
     if (_read_cv_cnt > 0) {
         _read_cv_cnt--;
-        _pkt_last = &_pkt_read_cv;
-        return _pkt_read_cv;
+        if (_read_cv_cnt == 0) {
+            // No response. Since CV read requires railcom, this is an error.
+            _ops_cv_done = true;
+            _ops_cv_status = false;
+            _ops_cv_val = 0x00; // arbitrary, seems better to set it
+            // continue on below to return a different packet
+        } else {
+            _pkt_last = &_pkt_read_cv;
+            return _pkt_read_cv;
+        }
     }
 
     if (_write_cv_cnt > 0) {
@@ -375,27 +365,43 @@ void DccThrottle::railcom(const RailComMsg *const msg, int msg_cnt)
             BufLog::write_line_put();
     }
 
+    // process messages received
+
     for (int i = 0; i < msg_cnt; i++) {
         if (msg[i].id == RailComMsg::MsgId::pom) {
             if (_read_cv_cnt > 0) {
                 xassert(_write_cv_cnt == 0 && _write_bit_cnt == 0);
                 _ops_cv_done = true;
+                _ops_cv_status = true;
                 _ops_cv_val = msg[i].pom.val;
                 _read_cv_cnt = 0;
             } else if (_write_cv_cnt > 0) {
                 xassert(_write_bit_cnt == 0);
                 _ops_cv_done = true;
+                _ops_cv_status = true;
                 _ops_cv_val = msg[i].pom.val;
                 _write_cv_cnt = 0;
             } else if (_write_bit_cnt > 0) {
                 _ops_cv_done = true;
+                _ops_cv_status = true;
                 _ops_cv_val = msg[i].pom.val;
                 _write_bit_cnt = 0;
             }
         } else if (msg[i].id == RailComMsg::MsgId::dyn) {
             if (msg[i].dyn.id == RailComSpec::DynId::dyn_speed_1) {
-                _speed = msg[i].dyn.val;
-                _speed_us = time_us_64();
+                if (msg[i].dyn.val != _speed) {
+                    // loco's self-reported speed has changed
+                    _speed = msg[i].dyn.val;
+                    _speed_us = time_us_64();
+                    if (_show_speed) {
+                        char *b = BufLog::write_line_get();
+                        if (b != nullptr) {
+                            snprintf(b, BufLog::line_len, "%0.3f speed=%u",
+                                     _speed_us / 1000000.0, _speed);
+                            BufLog::write_line_put();
+                        }
+                    }
+                }
             }
         }
     }

@@ -517,11 +517,9 @@ DccThrottle *DccCommand::find_throttle(int address)
         return nullptr;
     }
 
-    for (DccThrottle *t : _throttles) {
-        if (t->get_address() == address) {
+    for (DccThrottle *t : _throttles)
+        if (t->get_address() == address)
             return t;
-        }
-    }
 
     // address not found
     return nullptr;
