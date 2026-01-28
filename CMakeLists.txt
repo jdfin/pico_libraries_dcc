@@ -28,3 +28,5 @@ target_link_libraries(dcc INTERFACE
     hardware_uart
     misc
 )
+
+add_subdirectory(test)
