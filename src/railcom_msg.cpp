@@ -12,7 +12,7 @@
 
 
 // channel 1 messages
-bool RailComMsg::parse1(const uint8_t *&d, const uint8_t *d_end)
+bool RailComMsg::parse1(const uint8_t *&d, const uint8_t *d_end) // called in interrupt context
 {
     int len = d_end - d; // 6-bit datum available
     if (len < 1) {
@@ -46,7 +46,7 @@ bool RailComMsg::parse1(const uint8_t *&d, const uint8_t *d_end)
 
 
 // channel 2 messages
-bool RailComMsg::parse2(const uint8_t *&d, const uint8_t *d_end)
+bool RailComMsg::parse2(const uint8_t *&d, const uint8_t *d_end) // called in interrupt context
 {
     int len = d_end - d; // 6-bit datum available
     if (len < 1) {

@@ -612,15 +612,15 @@ static bool verbosity_try()
 
     if (strcasecmp(argv[1], "S") == 0) {
         if (strcasecmp(argv[2], "ON") == 0) {
-            command.show_speed(true);
+            command.show_rc_speed(true);
             printf("OK\n");
             return true;
         } else if (strcasecmp(argv[2], "OFF") == 0) {
-            command.show_speed(false);
+            command.show_rc_speed(false);
             printf("OK\n");
             return true;
         } else if (strcmp(argv[2], "?") == 0) {
-            printf("%s\n", command.show_speed() ? "ON" : "OFF");
+            printf("%s\n", command.show_rc_speed() ? "ON" : "OFF");
             return true;
         }
         // argv[2] unrecognized

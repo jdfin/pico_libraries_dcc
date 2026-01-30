@@ -39,8 +39,10 @@ public:
 
     void show();
 
-    void show_speed(bool show) { _show_speed = show; }
-    bool show_speed() const { return _show_speed; }
+    void show_rc_speed(bool show) { _show_rc_speed = show; }
+    bool show_rc_speed() const { return _show_rc_speed; }
+
+    uint8_t get_rc_speed() const { return _rc_speed; }
 
 private:
 
@@ -111,8 +113,8 @@ private:
     uint8_t _ops_cv_val;
 
     // speed reported in railcom data, if any
-    uint8_t _speed;
-    uint64_t _speed_us;
-    bool _show_speed;
+    uint8_t _rc_speed;
+    uint64_t _rc_speed_us;
+    bool _show_rc_speed;
 
 }; // class DccThrottle

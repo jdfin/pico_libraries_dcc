@@ -19,9 +19,9 @@ DccThrottle::DccThrottle(int address) :
     _ops_cv_done(false),
     _ops_cv_status(false),
     _ops_cv_val(0),
-    _speed(0),
-    _speed_us(UINT64_MAX),
-    _show_speed(false)
+    _rc_speed(0),
+    _rc_speed_us(UINT64_MAX),
+    _show_rc_speed(false)
 {
     set_address(address);
 }
@@ -305,7 +305,8 @@ DccPkt DccThrottle::next_packet()
 
 // This is called (at interrupt level) if any railcom channel2 messages are
 // received in the cutout following a DCC message from this throttle.
-void DccThrottle::railcom(const RailComMsg *const msg, int msg_cnt)
+
+void DccThrottle::railcom(const RailComMsg *const msg, int msg_cnt) // called in interrupt context
 {
     constexpr int verbosity = 0;
 
@@ -389,15 +390,15 @@ void DccThrottle::railcom(const RailComMsg *const msg, int msg_cnt)
             }
         } else if (msg[i].id == RailComMsg::MsgId::dyn) {
             if (msg[i].dyn.id == RailComSpec::DynId::dyn_speed_1) {
-                if (msg[i].dyn.val != _speed) {
+                if (msg[i].dyn.val != _rc_speed) {
                     // loco's self-reported speed has changed
-                    _speed = msg[i].dyn.val;
-                    _speed_us = time_us_64();
-                    if (_show_speed) {
+                    _rc_speed = msg[i].dyn.val;
+                    _rc_speed_us = time_us_64();
+                    if (_show_rc_speed) {
                         char *b = BufLog::write_line_get();
                         if (b != nullptr) {
                             snprintf(b, BufLog::line_len, "%0.3f speed=%u",
-                                     _speed_us / 1000000.0, _speed);
+                                     _rc_speed_us / 1000000.0, _rc_speed);
                             BufLog::write_line_put();
                         }
                     }

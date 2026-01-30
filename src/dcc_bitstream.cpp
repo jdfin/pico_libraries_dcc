@@ -181,7 +181,7 @@ void DccBitstream::stop()
 // byte=-1 is the packet preamble
 // then byte=0,1...msg_len-1 for the message bytes
 //
-void DccBitstream::next_bit()
+void DccBitstream::next_bit() // called in interrupt context
 {
     DbgGpio g(dbg_next_bit);
 
@@ -303,7 +303,7 @@ void DccBitstream::next_bit()
 
 
 // interrupt handler
-void DccBitstream::pwm_handler(void *arg)
+void DccBitstream::pwm_handler(void *arg) // called in interrupt context
 {
     DccBitstream *me = (DccBitstream *)arg;
 

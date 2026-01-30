@@ -155,7 +155,7 @@ bool DccCommand::svc_done(bool &result, uint8_t &val)
 }
 
 
-void DccCommand::loop()
+void DccCommand::loop() // called in interrupt context
 {
     if (_mode != Mode::SVC)
         return;
@@ -167,7 +167,7 @@ void DccCommand::loop()
 }
 
 
-void DccCommand::get_packet(DccPkt2 &pkt2)
+void DccCommand::get_packet(DccPkt2 &pkt2) // called in interrupt context
 {
     DbgGpio d(dbg_get_packet);
     uint32_t start_us = time_us_32();
@@ -200,7 +200,7 @@ void DccCommand::get_packet(DccPkt2 &pkt2)
 }
 
 
-void DccCommand::get_packet_ops(DccPkt2 &pkt2)
+void DccCommand::get_packet_ops(DccPkt2 &pkt2) // called in interrupt context
 {
     if (_next_throttle == _throttles.end()) {
         // XXX no throttles - return an idle packet
@@ -220,7 +220,7 @@ void DccCommand::get_packet_ops(DccPkt2 &pkt2)
 // 2. Send out DccSpec::svc_command_cnt (5) commands (write byte/bit)
 // 3. Send out DccSpec::svc_reset2_cnt (5) resets
 // If an ack is detected in step 2 or 3, immediately quit and power off track.
-void DccCommand::get_packet_svc_write(DccPkt2 &pkt2)
+void DccCommand::get_packet_svc_write(DccPkt2 &pkt2) // called in interrupt context
 {
     assert(_svc_cmd_step != SvcCmdStep::NONE);
 
@@ -312,7 +312,7 @@ void DccCommand::get_packet_svc_write(DccPkt2 &pkt2)
 //      b. if no ack has been received when the last reset goes out, we are
 //         done, _svc_status is set to ERROR, and calling svc_done() will
 //         return "done/error"
-void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
+void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2) // called in interrupt context
 {
     assert(_svc_cmd_step != SvcCmdStep::NONE);
 
@@ -427,7 +427,7 @@ void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
 } // void DccCommand::get_packet_svc_read_cv(DccPkt2 &pkt2)
 
 
-void DccCommand::get_packet_svc_read_bit(DccPkt2 &pkt2)
+void DccCommand::get_packet_svc_read_bit(DccPkt2 &pkt2) // called in interrupt context
 {
     assert(_svc_cmd_step != SvcCmdStep::NONE);
 

@@ -93,7 +93,7 @@ private:
     // a quarter-bit at the start of the cutout. Cutout timing is always in
     // terms of 'one' bits.
 
-    void prog_bit(int b)
+    void prog_bit(int b) // called in interrupt context
     {
         int half_us = (b == 0 ? DccSpec::t0_nom_us : DccSpec::t1_nom_us);
         pwm_set_wrap(_slice, 2 * half_us - 1);
@@ -102,7 +102,7 @@ private:
         pwm_set_chan_level(_slice, 1 - _channel, 2 * half_us);
     }
 
-    void prog_bit_cutout_start()
+    void prog_bit_cutout_start() // called in interrupt context
     {
         pwm_set_wrap(_slice, 2 * DccSpec::t1_nom_us - 1);
         pwm_set_chan_level(_slice, _channel, DccSpec::t1_nom_us);
@@ -110,7 +110,7 @@ private:
         pwm_set_chan_level(_slice, 1 - _channel, DccSpec::t1_nom_us / 2);
     }
 
-    void prog_bit_cutout()
+    void prog_bit_cutout() // called in interrupt context
     {
         pwm_set_wrap(_slice, 2 * DccSpec::t1_nom_us - 1);
         pwm_set_chan_level(_slice, _channel, DccSpec::t1_nom_us);
@@ -118,9 +118,9 @@ private:
         pwm_set_chan_level(_slice, 1 - _channel, 0);
     }
 
-    void next_bit();
+    void next_bit(); // called in interrupt context
 
-    static void pwm_handler(void *arg);
+    static void pwm_handler(void *arg); // called in interrupt context
 
     ///// Debug
 

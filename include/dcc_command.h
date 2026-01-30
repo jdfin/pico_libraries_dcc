@@ -67,17 +67,17 @@ public:
     void show_railcom(bool show) { _bitstream.show_railcom(show); }
     bool show_railcom() const { return _bitstream.show_railcom(); }
 
-    void show_speed(bool show)
+    void show_rc_speed(bool show)
     {
         for (DccThrottle *t : _throttles)
-            t->show_speed(show);
+            t->show_rc_speed(show);
     }
 
-    bool show_speed()
+    bool show_rc_speed()
     {
-        // return true if any throttle has show_speed set
+        // return true if any throttle has show_rc_speed set
         for (DccThrottle *t : _throttles)
-            if (t->show_speed())
+            if (t->show_rc_speed())
                 return true;
         return false;
     }

@@ -15,7 +15,7 @@ public:
 
     RailCom(uart_inst_t *uart, int rx_gpio);
 
-    void reset()
+    void reset() // called in interrupt context
     {
         if (_uart == nullptr || _rx_gpio < 0) {
             return;

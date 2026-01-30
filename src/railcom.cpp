@@ -41,7 +41,7 @@ void RailCom::dbg_init()
 }
 
 
-void RailCom::read()
+void RailCom::read() // called in interrupt context
 {
     DbgGpio d(dbg_read);
 
@@ -102,7 +102,8 @@ void RailCom::read()
 //
 // XXX Can we get less than 6 bytes of channel 2 data? ESU LokSound 5 fills
 //     out channel 2 to 6 bytes, but I don't think the spec requires that.
-void RailCom::parse()
+
+void RailCom::parse() // called in interrupt context
 {
     const uint8_t *d = _dec;
     const uint8_t *d_end = d + _pkt_len;
