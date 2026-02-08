@@ -7,8 +7,6 @@ add_executable(dcc_cmd
     dcc_cmd.cpp
 )
 
-#pico_set_printf_implementation(dcc_cmd compiler)
-
 pico_enable_stdio_uart(dcc_cmd 0)
 pico_enable_stdio_usb(dcc_cmd 1)
 
